@@ -4,56 +4,54 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256" // Naya import: Hashing ke liye
 	"fmt"
 	"io"
 	"os"
 )
 
-// Encrypt function: File ko lock karne ke liye
-func encryptFile(filename string, key []byte) error {
-	plaintext, _ := os.ReadFile(filename)
-	
+// Password ko 32-byte key mein convert karne ke liye
+func createKey(password string) []byte {
+	hash := sha256.Sum256([]byte(password))
+	return hash[:]
+}
+
+func encryptFile(filename string, password string) error {
+	plaintext, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	key := createKey(password) // Password se key banayi
 	block, _ := aes.NewCipher(key)
 	gcm, _ := cipher.NewGCM(block)
-	
+
 	nonce := make([]byte, gcm.NonceSize())
 	io.ReadFull(rand.Reader, nonce)
-	
+
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-	
-	// Nayi encrypted file banana (.aegis extension ke sath)
 	return os.WriteFile(filename+".aegis", ciphertext, 0644)
 }
 
-// Decrypt function: File ko wapas asli roop mein laane ke liye
-func decryptFile(filename string, key []byte) error {
-	ciphertext, _ := os.ReadFile(filename)
-	
+func decryptFile(filename string, password string) error {
+	ciphertext, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	key := createKey(password) // Wahi password se key generate ki
 	block, _ := aes.NewCipher(key)
 	gcm, _ := cipher.NewGCM(block)
-	
+
 	nonceSize := gcm.NonceSize()
 	nonce, actualCiphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	
-	plaintext, _ := gcm.Open(nil, nonce, actualCiphertext, nil)
-	
-	// Asli file wapas nikalna (bin_ prefix ke sath testing ke liye)
-	return os.WriteFile("decrypted_"+filename[:len(filename)-6], plaintext, 0644)
-}
 
-func main() {
-	// Ye tumhara secret 32-byte key hai (Password)
-	// Real project mein hum ise user se input lenge
-	key := []byte("thisisa32bitsecretkeyforproject!") 
-
-	fmt.Println("🔒 Aegis Engine Starting...")
-	
-	// Testing ke liye: Ek file ko encrypt karo
-	// Pehle apne folder mein 'test.txt' bana lena
-	err := encryptFile("test.txt", key)
-	if err == nil {
-		fmt.Println("✅ File Encrypted: test.txt.aegis")
-	} else {
-		fmt.Println("❌ Error:", err)
+	plaintext, err := gcm.Open(nil, nonce, actualCiphertext, nil)
+	if err != nil {
+		return fmt.Errorf("galat password ya file kharab hai")
 	}
+
+	// Extension hatane ke liye
+	outputName := "unlocked_" + filename[:len(filename)-6]
+	return os.WriteFile(outputName, plaintext, 0644)
 }
